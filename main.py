@@ -2,76 +2,90 @@ import uuid
 import string
 import random
 import requests
-from telegram.ext import Updater, CommandHandler
 from flask import Flask
-import threading
+from threading import Thread
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
 BOT_TOKEN = "7325333749:AAGuciHvW6E0NJg4vlSk4L7jBi2la-oD37A"
 
+
+# ------------ INSTAGRAM RESET ------------
 def send_instagram_reset(target):
     if target.startswith("@"):
         return "❌ Enter username without '@'."
-    csrf_token = "".join(random.choices(string.ascii_letters + string.digits, k=32))
+
     if "@" in target:
         data = {
-            "_csrftoken": csrf_token,
+            "_csrftoken": "".join(random.choices(string.ascii_letters + string.digits, k=32)),
             "user_email": target,
             "guid": str(uuid.uuid4()),
             "device_id": str(uuid.uuid4())
         }
     else:
         data = {
-            "_csrftoken": csrf_token,
+            "_csrftoken": "".join(random.choices(string.ascii_letters + string.digits, k=32)),
             "username": target,
             "guid": str(uuid.uuid4()),
             "device_id": str(uuid.uuid4())
         }
+
     headers = {
-        "user-agent":
-            f"Instagram 150.0.0.0.000 Android (29/10; 300dpi; 720x1440; "
-            f"{''.join(random.choices(string.ascii_lowercase + string.digits, k=16))}/"
-            f"{''.join(random.choices(string.ascii_lowercase + string.digits, k=16))}; "
-            f"{''.join(random.choices(string.ascii_lowercase + string.digits, k=16))}; "
-            f"{''.join(random.choices(string.ascii_lowercase + string.digits, k=16))}; "
-            f"{''.join(random.choices(string.ascii_lowercase + string.digits, k=16))}; en_GB;)"
+        "user-agent": "Instagram 150.0.0.0.000 Android"
     }
-    response = requests.post(
+
+    r = requests.post(
         "https://i.instagram.com/api/v1/accounts/send_password_reset/",
         headers=headers,
         data=data
     )
-    if "obfuscated_email" in response.text:
-        return f"✅ Reset email sent!\n\n{response.text}"
+
+    if "obfuscated_email" in r.text:
+        return "✅ Reset link sent!\n\n" + r.text
     else:
-        return f"❌ Failed.\n\n{response.text}"
+        return "❌ Failed.\n\n" + r.text
 
-def reset(update, context):
-    try:
-        target = context.args[0]
-    except:
-        update.message.reply_text("Usage: /reset username_or_email")
+
+# ------------ TELEGRAM COMMAND ------------
+async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("Usage: /reset username_or_email")
         return
-    update.message.reply_text("⏳ Sending reset request…")
+
+    target = context.args[0]
+    await update.message.reply_text("⏳ Sending reset request...")
+
     result = send_instagram_reset(target)
-    update.message.reply_text(result)
+    await update.message.reply_text(result)
 
-def main_bot():
-    updater = Updater(BOT_TOKEN, use_context=True)
-    dp = updater.dispatcher
-    dp.add_handler(CommandHandler("reset", reset))
-    updater.start_polling()
-    print("BOT IS RUNNING…")
-    updater.idle()
 
-app = Flask("")
+# ------------ TELEGRAM BOT START ------------
+async def start_bot():
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-@app.route("/")
+    app.add_handler(CommandHandler("reset", reset))
+
+    print("BOT RUNNING...")
+    await app.initialize()
+    await app.start()
+    await app.updater.start_polling()
+    await app.updater.idle()
+
+
+# ------------ FLASK WEB SERVER FOR RAILWAY ------------
+flask_app = Flask(__name__)
+
+@flask_app.route("/")
 def home():
-    return "Bot is online."
+    return "Bot is alive."
 
-def run_web():
-    app.run(host="0.0.0.0", port=8080)
+def run_server():
+    flask_app.run(host="0.0.0.0", port=8080)
 
+
+# ------------ ENTRY POINT ------------
 if __name__ == "__main__":
-    threading.Thread(target=run_web).start()
-    main_bot()
+    Thread(target=run_server).start()
+
+    import asyncio
+    asyncio.run(start_bot())
